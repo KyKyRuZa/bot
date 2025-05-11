@@ -1,64 +1,78 @@
-# api.py
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
 import asyncpg
-from config import DB_CONFIG, API_TOKEN
-import logging
-from aiogram import Bot
+from typing import List
+from pydantic import BaseModel
+import config
+from datetime import datetime
 
 app = FastAPI()
-logger = logging.getLogger(__name__)
 
-# Инициализация бота для доступа к файлам
-bot = Bot(token=API_TOKEN)
-
-# === CORS Middleware ===
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # URL фронтенда
+    allow_origins=["http://localhost:3000"],  # Specifically allow your React app's origin
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Mount the media directory to serve static files
+app.mount("/media", StaticFiles(directory=Path("media")), name="media")
+# Database connection pool
+pool = None
 
-# === Подключение к БД ===
+# Initialize the database pool
 @app.on_event("startup")
 async def startup():
-    app.state.pool = await asyncpg.create_pool(**DB_CONFIG)
-    logger.info("🌐 API: Успешно подключились к PostgreSQL")
+    global pool
+    pool = await asyncpg.create_pool(**config.DB_CONFIG)
 
+# Close the database pool
+@app.on_event("shutdown")
+async def shutdown():
+    global pool
+    if pool:
+        await pool.close()
 
-# === Маршрут для получения всех сообщений ===
-@app.get("/messages")
+# Define a model for message responses
+class Message(BaseModel):
+    id: int
+    message_id: int
+    text: str = None
+    media_type: str = None
+    media_url: str = None
+    timestamp: datetime  # Changed from str to datetime
+
+    class Config:
+        # This tells Pydantic to use this model for arbitrary class instances
+        # which is needed for datetime objects
+        orm_mode = True
+
+@app.get("/messages", response_model=List[Message])
 async def get_messages():
-    pool = app.state.pool
+    global pool
+    if not pool:
+        pool = await asyncpg.create_pool(**config.DB_CONFIG)
+        
     async with pool.acquire() as conn:
         rows = await conn.fetch('''
-            SELECT message_id, text, media_type, file_id, file_unique_id, timestamp 
-            FROM channel_messages
+            SELECT id, message_id, text, media_type, media_url, timestamp
+            FROM messages
             ORDER BY timestamp DESC
         ''')
-        return [
-            {
-                "id": r['message_id'],
-                "text": r['text'],
-                "media_type": r['media_type'],
-                "file_id": r['file_id'],
-                "file_unique_id": r['file_unique_id'],
-                "timestamp": r['timestamp']
+        
+        # Convert rows to a list of dictionaries with proper timestamp handling
+        messages = []
+        for row in rows:
+            message = {
+                "id": row["id"],
+                "message_id": row["message_id"],
+                "text": row["text"],
+                "media_type": row["media_type"],
+                "media_url": row["media_url"],
+                "timestamp": row["timestamp"].isoformat() if isinstance(row["timestamp"], datetime) else str(row["timestamp"])
             }
-            for r in rows
-        ]
-
-
-# === Маршрут для получения URL файла по его file_id ===
-@app.get("/file/{file_id}")
-async def get_file_url(file_id: str):
-    try:
-        file_info = await bot.get_file(file_id)
-        file_path = file_info.file_path
-        file_url = f"https://api.telegram.org/file/bot {API_TOKEN}/{file_path}"
-        return {"file_url": file_url}
-    except Exception as e:
-        logger.error(f"Ошибка при получении файла: {e}")
-        raise HTTPException(status_code=404, detail="Файл не найден")
+            messages.append(message)
+            
+        return messages
