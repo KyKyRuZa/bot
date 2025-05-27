@@ -1,0 +1,123 @@
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
+import asyncpg
+from typing import List, Optional, Union
+from pydantic import BaseModel, validator
+import config
+from datetime import datetime
+import json
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/media", StaticFiles(directory=Path("media")), name="media")
+pool = None
+
+@app.on_event("startup")
+async def startup():
+    global pool
+    pool = await asyncpg.create_pool(**config.DB_CONFIG)
+
+@app.on_event("shutdown")
+async def shutdown():
+    global pool
+    if pool:
+        await pool.close()
+
+class Message(BaseModel):
+    id: int
+    message_id: int
+    text: Optional[str] = None
+    media_type: Optional[str] = None
+    media_url: Optional[str] = None
+    media_types: Optional[List[str]] = None
+    media_urls: Optional[List[str]] = None
+    is_media_group: bool = False
+    timestamp: str
+
+    @validator('media_type', pre=True, always=True)
+    def validate_media_type(cls, v):
+        return v if v is not None else None
+
+    @validator('media_url', pre=True, always=True)
+    def validate_media_url(cls, v):
+        return v if v is not None else None
+
+    @validator('text', pre=True, always=True)
+    def validate_text(cls, v):
+        return v if v is not None else None
+
+    class Config:
+        orm_mode = True
+
+@app.get("/messages", response_model=List[Message])
+async def get_messages():
+    global pool
+    if not pool:
+        pool = await asyncpg.create_pool(**config.DB_CONFIG)
+        
+    async with pool.acquire() as conn:
+        rows = await conn.fetch('''
+            SELECT id, message_id, text, media_type, media_url, media_group_id, timestamp
+            FROM messages
+            ORDER BY timestamp DESC
+        ''')
+        
+        messages = []
+        for row in rows:
+            try:
+                # Проверяем, является ли это группой медиа
+                is_media_group = row["media_group_id"] is not None
+                
+                if is_media_group:
+                    # Парсим JSON данные для группы медиа
+                    try:
+                        media_types = json.loads(row["media_type"]) if row["media_type"] else []
+                        media_urls = json.loads(row["media_url"]) if row["media_url"] else []
+                    except (json.JSONDecodeError, TypeError):
+                        # Если не удалось распарсить JSON, обрабатываем как обычное сообщение
+                        media_types = [row["media_type"]] if row["media_type"] else []
+                        media_urls = [row["media_url"]] if row["media_url"] else []
+                    
+                    message_data = {
+                        "id": row["id"],
+                        "message_id": row["message_id"],
+                        "text": row["text"],
+                        "media_type": None,
+                        "media_url": None,
+                        "media_types": media_types,
+                        "media_urls": media_urls,
+                        "is_media_group": True,
+                        "timestamp": row["timestamp"].isoformat() if isinstance(row["timestamp"], datetime) else str(row["timestamp"])
+                    }
+                else:
+                    # Обычное сообщение
+                    message_data = {
+                        "id": row["id"],
+                        "message_id": row["message_id"],
+                        "text": row["text"],
+                        "media_type": row["media_type"],
+                        "media_url": row["media_url"],
+                        "media_types": None,
+                        "media_urls": None,
+                        "is_media_group": False,
+                        "timestamp": row["timestamp"].isoformat() if isinstance(row["timestamp"], datetime) else str(row["timestamp"])
+                    }
+                
+                messages.append(message_data)
+                
+            except Exception as e:
+                # Логируем ошибку и пропускаем проблемное сообщение
+                print(f"Ошибка при обработке сообщения {row['id']}: {e}")
+                continue
+            
+        return messages
