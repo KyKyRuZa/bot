@@ -30,7 +30,7 @@ bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
 # === Константы для медиа файлов ===
-MEDIA_ROOT = Path("media")
+MEDIA_ROOT = Path("/var/www/uploads")
 IMAGE_DIR = MEDIA_ROOT / "img"
 VIDEO_DIR = MEDIA_ROOT / "video"
 AUDIO_DIR = MEDIA_ROOT / "audio"
@@ -78,7 +78,7 @@ async def download_and_save_media(file_id, media_type, message_id):
         file_info = await bot.get_file(file_id)
         file_path = file_info.file_path
         
-        if file_info.file_size and file_info.file_size > 20 * 1024 * 1024:  # 20MB
+        if file_info.file_size and file_info.file_size > 20 * 1024 * 1024:
                 logger.warning(f"Файл слишком большой ({file_info.file_size} bytes) для скачивания через Bot API: {file_id}")
                 return None
 
@@ -96,8 +96,8 @@ async def download_and_save_media(file_id, media_type, message_id):
             await f.write(file_content.read())
         
         # Формируем URL для доступа к файлу
-        relative_path = f"media/{directory.name}/{filename}"
-        url = f"http://localhost:8000/{relative_path}"
+        relative_path = f"uploads/{directory.name}/{filename}"
+        url = f"http://anotsenimzhizn.ru/{relative_path}"
         
         logger.info(f"Сохранен файл: {filepath}, URL: {url}")
         return url
@@ -219,7 +219,7 @@ async def log_channel_message(message: Message):
 # === Функция запуска бота ===
 async def run_bot():
     logger.info("🤖 Бот запускается...")
-    
+
     try:
         await bot.delete_webhook()
     except Exception as e:
