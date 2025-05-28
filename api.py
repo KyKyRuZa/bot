@@ -19,7 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/media", StaticFiles(directory=Path("media")), name="media")
+app.mount("/api/media", StaticFiles(directory=Path("media")), name="media")
 pool = None
 
 @app.on_event("startup")
