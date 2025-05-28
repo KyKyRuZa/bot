@@ -13,7 +13,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://anotsenimzhizn.ru"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -59,7 +59,7 @@ class Message(BaseModel):
     class Config:
         orm_mode = True
 
-@app.get("/messages", response_model=List[Message])
+@app.get("/api/messages", response_model=List[Message])
 async def get_messages():
     global pool
     if not pool:
