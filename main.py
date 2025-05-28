@@ -97,10 +97,9 @@ async def download_and_save_media(file_id, media_type, message_id):
         
         # Формируем URL для доступа к файлу
         relative_path = f"uploads/{directory.name}/{filename}"
-        url = f"http://anotsenimzhizn.ru/{relative_path}"
         
-        logger.info(f"Сохранен файл: {filepath}, URL: {url}")
-        return url
+        logger.info(f"Сохранен файл: {filepath}, относительный путь: {relative_path}")
+        return relative_path
     
     except Exception as e:
             logger.error(f"Ошибка при скачивании файла {file_id}: {e}")
