@@ -219,6 +219,12 @@ async def log_channel_message(message: Message):
 # === Функция запуска бота ===
 async def run_bot():
     logger.info("🤖 Бот запускается...")
+    
+    try:
+        await bot.delete_webhook()
+    except Exception as e:
+        logger.warning(f"Ошибка при удалении вебхука: {e}")
+
     dp.pool = await asyncpg.create_pool(**config.DB_CONFIG)
     await init_db(dp.pool)
     me = await bot.get_me()
